@@ -78,16 +78,33 @@ Automatic failover is enabled to ensure database resilience.
 
 ---
 
-## Security Model
+## Security & Management Layer
 
-Strict security group segmentation enforces controlled traffic flow:
+The infrastructure includes a complete operational management layer:
 
-- **ALB Security Group** – Allows inbound HTTP/HTTPS from the internet
-- **EC2 Security Group** – Allows traffic only from the ALB security group
-- **RDS Security Group** – Allows database access only from the EC2 security group
+### IAM Role & Instance Profile
+- Dedicated IAM role attached to EC2 instances
+- AmazonSSMManagedInstanceCore policy enabled
+- CloudWatchAgentServerPolicy attached
+- Enables secure access via Session Manager (no SSH required)
 
-No direct public access is permitted to application or database servers.
+### Auto Scaling Policy
+- Target Tracking Scaling Policy
+- Scales out when average ASG CPU exceeds 70%
+- Automatically scales in when load decreases
+- Ensures elasticity and cost efficiency
 
+### CloudWatch Monitoring
+- CPU utilization monitoring enabled
+- High CPU alarm triggers after 3 consecutive datapoints
+- Integrated with Auto Scaling Group
+
+### SNS Alerting
+- SNS topic configured for infrastructure alerts
+- Email subscription for operational notifications
+- Sends alert when CPU threshold is breached
+
+This ensures production-grade observability, automated scaling, and proactive alerting.
 ---
 
 ## Terraform State Management
