@@ -331,6 +331,11 @@ resource "aws_launch_template" "dk_application_launch_template" {
   image_id      = data.aws_ami.dk_amazon_linux_ami.id
   instance_type = "t2.micro"
 
+  # Attach IAM instance profile to EC2
+  iam_instance_profile {
+    name = aws_iam_instance_profile.ec2_instance_profile.name
+  }
+
   vpc_security_group_ids = [
     aws_security_group.dk_ec2_security_group.id
   ]
@@ -341,7 +346,7 @@ dnf update -y
 dnf install -y httpd
 systemctl enable httpd
 systemctl start httpd
-echo "Welcome to DK Production App - Amazon Linux 2023" > /var/www/html/index.html
+echo "Welcome to DK Multi-AZ Production App " > /var/www/html/index.html
 EOF
   )
 
@@ -353,7 +358,6 @@ EOF
     }
   }
 }
-
 # Auto Scaling Group across private subnets
 resource "aws_autoscaling_group" "dk_application_auto_scaling_group" {
   name             = "dk-application-asg"
@@ -456,4 +460,82 @@ resource "aws_dynamodb_table" "dk_terraform_state_lock_table" {
     Name = "dk-tf-state-lock-table"
   }
 }
+# Create IAM role for EC2 instances
+resource "aws_iam_role" "ec2_application_role" {
+  name = "ec2-application-role"
 
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+        Action = "sts:AssumeRole"
+      }
+    ]
+  })
+}
+# Attach AmazonSSMManagedInstanceCore policy to EC2 role
+resource "aws_iam_role_policy_attachment" "ec2_ssm_policy_attachment" {
+  role       = aws_iam_role.ec2_application_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+# Attach CloudWatchAgentServerPolicy to EC2 role
+resource "aws_iam_role_policy_attachment" "ec2_cloudwatch_policy_attachment" {
+  role       = aws_iam_role.ec2_application_role.name
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+}
+# Create instance profile for EC2 role
+resource "aws_iam_instance_profile" "ec2_instance_profile" {
+  name = "ec2-application-instance-profile"
+  role = aws_iam_role.ec2_application_role.name
+}
+# Auto Scaling policy based on average CPU utilization
+resource "aws_autoscaling_policy" "cpu_target_tracking_policy" {
+  name                   = "cpu-target-tracking-policy"
+  autoscaling_group_name = aws_autoscaling_group.dk_application_auto_scaling_group.name
+  policy_type            = "TargetTrackingScaling"
+
+  target_tracking_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ASGAverageCPUUtilization"
+    }
+
+    target_value = 70.0
+  }
+}
+
+# SNS topic for Auto Scaling alerts
+resource "aws_sns_topic" "application_alerts_topic" {
+  name = "application-alerts-topic"
+}
+
+# Email subscription for alerts
+resource "aws_sns_topic_subscription" "email_alert_subscription" {
+  topic_arn = aws_sns_topic.application_alerts_topic.arn
+  protocol  = "email"
+  endpoint  = "dlrasha14@gmail.com"
+}
+# CloudWatch Alarm for high CPU notification
+resource "aws_cloudwatch_metric_alarm" "high_cpu_notification_alarm" {
+  alarm_name          = "dk-application-asg-high-cpu-alert"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 3
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/EC2"
+  period              = 60
+  statistic           = "Average"
+  threshold           = 70
+  alarm_description   = "Triggers SNS when average ASG CPU exceeds 70%"
+
+  dimensions = {
+    AutoScalingGroupName = aws_autoscaling_group.dk_application_auto_scaling_group.name
+  }
+
+  alarm_actions = [
+    aws_sns_topic.application_alerts_topic.arn
+  ]
+}
