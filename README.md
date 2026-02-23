@@ -128,8 +128,9 @@ This configuration ensures safe collaboration, state consistency, and protection
 6. Private instances access external services through NAT Gateways when required.
 
 ---
-
 ## Repository Structure
+
+```
 aws-ha-prod-infra/
 ├── main.tf
 ├── variables.tf
@@ -138,16 +139,17 @@ aws-ha-prod-infra/
 ├── README.md
 └── architecture/
     └── aws-ha-architecture.png
-
+```
 ---
-
 ## Deployment
 
 Initialize and deploy infrastructure:
+
+```
 terraform init
 terraform plan
 terraform apply
-
+```
 
 ---
 
